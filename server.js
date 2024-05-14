@@ -10,7 +10,7 @@ app.use(express.json()); // Add this line to parse JSON request bodies
 
 const config = {
     server: 'TECHNO-404\\SQLDEV19',
-    database: 'PALMS-9.1',
+    database: 'PalmsPOCdb',
     user: 'sa',
     password: 'techno-123',
     driver: 'msnodesqlv8',
@@ -42,14 +42,13 @@ app.listen(port, () => {
 // Routes
 app.get('/data', getData);
 app.post('/add', addData);
-app.put('/update', updateData);
-app.delete('/delete', deleteData);
+app.put('/update/:EmpID', updateData);
 
 // Route Handlers
 async function getData(req, res) {
     try {
         const query = `
-            SELECT * FROM City;
+            SELECT * FROM Employee;
         `;
 
         const result = await pool.request().query(query);
@@ -61,57 +60,97 @@ async function getData(req, res) {
 }
 
 async function addData(req, res) {
-    const { cityName, cityCode, stateId } = req.body;
-    const createdBy = 1;
-    const createdDate = new Date();
+    const { 
+        EmployeeName,
+        Gender,
+        AddressLine1,
+        AddressLine2,
+        CityID,
+        StateID,
+        EmailAddress,
+        PhoneNumber,
+        DepartmentID,
+        DesignationID 
+    } = req.body;
 
-    console.log('Request body:', req.body);
+    const insertQuery = `
+        INSERT INTO Employee 
+            (EmployeeName, Gender, AddressLine1, AddressLine2, CityID, StateID, EmailAddress, PhoneNumber, DepartmentID, DesignationID)
+        VALUES 
+            (@EmployeeName, @Gender, @AddressLine1, @AddressLine2, @CityID, @StateID, @EmailAddress, @PhoneNumber, @DepartmentID, @DesignationID)
+    `;
+
+    const inputParams = {
+        EmployeeName,
+        Gender,
+        AddressLine1,
+        AddressLine2,
+        CityID,
+        StateID,
+        EmailAddress,
+        PhoneNumber,
+        DepartmentID,
+        DesignationID
+    };
+
     try {
-        await pool.request()
-            .input('cityName', sql.VarChar(255), cityName)
-            .input('cityCode', sql.VarChar(50), cityCode)
-            .input('stateId', sql.Int, stateId)
-            .input('createdBy', sql.Int, createdBy)
-            .input('createdDate', sql.DateTime, createdDate)
-            .query('INSERT INTO City ( CityName, CityCode, StateID, CreatedBy, CreatedDate) VALUES ( @cityName, @cityCode, @stateId, @createdBy, @createdDate)');
+        const request = await pool.request();
+
+        Object.keys(inputParams).forEach(key => {
+            request.input(key, sql.VarChar(50), inputParams[key]);
+        });
+
+        const result = await request.query(insertQuery);
     
-        res.status(200).json({ success: true });
+        res.status(201).json(result);
     } catch (error) {
-        console.error('Error saving data:', error);
-        res.status(500).json({ error: 'Error saving data' });
+        console.error('Error adding data:', error);
+        res.status(500).json({ error: 'Error adding data' });
     }
 }
 
 async function updateData(req, res) {
-    const { cityName, cityCode, stateId, cityId } = req.body;
-    console.log(cityCode);
+    const { EmpID } = req.params;
+    const { 
+        EmployeeName,
+        Gender,
+        AddressLine1,
+        AddressLine2,
+        CityID,
+        StateID,
+        EmailAddress,
+        PhoneNumber,
+        DepartmentID,
+        DesignationID 
+    } = req.body;
+
+    let updateQuery = 'UPDATE Employee SET';
+    const inputParams = {};
+
+    Object.keys(req.body).forEach(key => {
+        if (req.body[key] !== undefined) {
+            updateQuery += ` ${key} = @${key},`;
+            inputParams[key] = req.body[key];
+        }
+    });
+    
+    updateQuery = updateQuery.slice(0, -1) + ' WHERE EmpID = @EmpID';
 
     try {
-        await pool.request()
-            .input('cityName', sql.VarChar(255), cityName)
-            .input('cityCode', sql.VarChar(50), cityCode)
-            .input('stateId', sql.Int, stateId)
-            .input('cityId', sql.Int, cityId)
-            .query('UPDATE City SET CityName = @cityName, CityCode = @cityCode, StateID = @stateId WHERE CityID = @cityId');
+        const request = await pool.request();
+
+        Object.keys(inputParams).forEach(key => {
+            request.input(key, sql.VarChar(50), inputParams[key]);
+        });
+
+        request.input('EmpID', sql.Int, EmpID);
+
+        const result = await request.query(updateQuery);
     
-        res.status(200).json({ success: true });
+        res.status(200).json(result);
     } catch (error) {
         console.error('Error updating data:', error);
         res.status(500).json({ error: 'Error updating data' });
-    }
-}
-
-async function deleteData(req, res) {
-    const {cityName}=req.body;
-    try {
-        await pool.request()
-            .input('cityName', sql.VarChar(255), cityName)
-            .query('UPDATE City SET IsDeleted = 1 WHERE CityName = @cityName');
-    
-        res.status(200).json({ success: true });
-    } catch (error) {
-        console.error('Error deleting data:', error);
-        res.status(500).json({ error: 'Error deleting data' });
     }
 }
 
