@@ -43,6 +43,7 @@ app.listen(port, () => {
 app.get('/data', getData);
 app.post('/add', addData);
 app.put('/update/:EmpID', updateData);
+app.delete('/delete/:EmpID', deleteData);
 
 // Route Handlers
 async function getData(req, res) {
@@ -151,6 +152,29 @@ async function updateData(req, res) {
     } catch (error) {
         console.error('Error updating data:', error);
         res.status(500).json({ error: 'Error updating data' });
+    }
+}
+
+async function deleteData(req, res) {
+    const { EmpID } = req.params;
+
+    const deleteQuery = 'DELETE FROM Employee WHERE EmpID = @EmpID';
+
+    try {
+        const request = await pool.request();
+
+        request.input('EmpID', sql.Int, EmpID);
+
+        const result = await request.query(deleteQuery);
+        
+        if (result.rowsAffected[0] === 0) {
+            return res.status(404).json({ error: 'Employee not found' });
+        }
+
+        res.status(200).json({ message: 'Employee deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting data:', error);
+        res.status(500).json({ error: 'Error deleting data' });
     }
 }
 
