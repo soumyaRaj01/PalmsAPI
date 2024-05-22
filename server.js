@@ -10,12 +10,12 @@ app.use(express.json()); // Add this line to parse JSON request bodies
 
 const config = {
     server: 'TECHNO-404\\SQLDEV19',
-    database: 'PalmsPOCdb',
+    database: 'PalmsPOC_db',
     user: 'sa',
     password: 'techno-123',
     driver: 'msnodesqlv8',
     options: {
-        trustedConnection: true
+        trusted_Connection: false // true for Windows authentication, false for SQL Server authentication
     }
 };
 
@@ -25,7 +25,8 @@ let pool;
 // Connect to the database
 async function connectDatabase() {
     try {
-        pool = await new sql.ConnectionPool(config).connect();
+        console.log('Connecting to database...');
+		pool = await new sql.ConnectionPool(config).connect();
         console.log('Connected to database');
     } catch (error) {
         console.error('Error connecting to database:', error);
@@ -35,7 +36,7 @@ async function connectDatabase() {
 
 // Handle server startup
 app.listen(port, () => {
-    console.log(`Server is running on http://localhost:${port}`);
+    console.log('Server is running on http://localhost:${port}');
     connectDatabase();
 });
 
@@ -48,6 +49,11 @@ app.get('/getCity', getCity);
 app.post('/addCity', addCity);
 app.put('/updateCity/:CityID', updateCity);
 app.delete('/deleteCity/:CityID', deleteCity);
+app.get('/getCountries', getCountries);
+app.get('/getStates/:CountryID', getStates);
+app.get('/getCities/:StateID', getCities);
+app.get('/getDepartments', getDepartments);
+app.get('/getDesignations', getDesignations);
 
 // Route Handlers
 async function getEmployee(req, res) {
@@ -66,43 +72,51 @@ async function getEmployee(req, res) {
 
 async function addEmployee(req, res) {
     const { 
-        EmployeeName,
-        Gender,
-        AddressLine1,
-        AddressLine2,
-        CityID,
-        StateID,
-        EmailAddress,
-        PhoneNumber,
-        DepartmentID,
-        DesignationID 
+        employeeName,
+        gender,
+        addressLine1,
+        addressLine2,
+        cityID,
+        email,
+        phoneNo,
+        departmentID,
+        designationID,
+		joiningDate,
+		isActive
     } = req.body;
+
+	var active = isActive ? 1:0;
+	var numDate = joiningDate ? parseInt(joiningDate.replace(/[^0-9]/g, "")) : null;
+	var dt = numDate ? new Date(numDate) : null;
+	const date = dt ? new Date(dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset())).toISOString() : null;
 
     const insertQuery = `
         INSERT INTO Employee 
-            (EmployeeName, Gender, AddressLine1, AddressLine2, CityID, StateID, EmailAddress, PhoneNumber, DepartmentID, DesignationID)
+            (EmployeeName, Gender, AddressLine1, AddressLine2, CityID, Email, PhoneNo, DepartmentID, DesignationID, JoiningDate, isActive)
         VALUES 
-            (@EmployeeName, @Gender, @AddressLine1, @AddressLine2, @CityID, @StateID, @EmailAddress, @PhoneNumber, @DepartmentID, @DesignationID)
+            (@EmployeeName, @Gender, @AddressLine1, @AddressLine2, @CityID, @Email, @PhoneNo, @DepartmentID, @DesignationID, @date, @active)
     `;
 
     const inputParams = {
-        EmployeeName,
-        Gender,
-        AddressLine1,
-        AddressLine2,
-        CityID,
-        StateID,
-        EmailAddress,
-        PhoneNumber,
-        DepartmentID,
-        DesignationID
+        employeeName,
+        gender,
+        addressLine1,
+        addressLine2,
+        cityID,
+        email,
+        phoneNo,
+        departmentID,
+        designationID,
+		date,
+		active
     };
 
     try {
         const request = await pool.request();
 
         Object.keys(inputParams).forEach(key => {
-            request.input(key, sql.VarChar(50), inputParams[key]);
+            request.input(key, sql.VarChar(inputParams[key] ? (inputParams[key].length?inputParams[key].length:6) : 1), inputParams[key]);
+			//console.log(key + ' -> ' + inputParams[key] + ' -> ' + (inputParams[key] ? (inputParams[key].length?inputParams[key].length:6) : 6));
         });
 
         const result = await request.query(insertQuery);
@@ -110,7 +124,7 @@ async function addEmployee(req, res) {
         res.status(201).json({ message: 'Employee added successfully' });
     } catch (error) {
         console.error('Error adding data:', error);
-        res.status(500).json({ error: 'Error adding data' });
+        res.status(500).json({ error: 'Error adding data (' + error + ')' });
     }
 }
 
@@ -123,8 +137,8 @@ async function updateEmployee(req, res) {
         AddressLine2,
         CityID,
         StateID,
-        EmailAddress,
-        PhoneNumber,
+        Email,
+        PhoneNo,
         DepartmentID,
         DesignationID 
     } = req.body;
@@ -188,9 +202,12 @@ async function deleteEmployee(req, res) {
 
 async function getCity(req, res) {
     try {
-        const query = `
-            SELECT * FROM City;
-        `;
+        const query = `SELECT
+		   c.CityID, c.CityCode, c.CityName, c.PinCode,
+		   s.StateID, s.StateCode, s.StateName 
+		FROM  City as C 
+		   LEFT JOIN State as s 
+		   ON c.StateID = s.StateID`;
 
         const result = await pool.request().query(query);
         res.json({data: result.recordset});
@@ -301,6 +318,80 @@ async function deleteCity(req, res) {
     } catch (error) {
         console.error('Error deleting data:', error);
         res.status(500).json({ error: 'Error deleting data' });
+    }
+}
+
+async function getCountries(req, res) {
+    try {
+        const query = `SELECT Country.CountryID,Country.CountryCode,Country.CountryName FROM Country
+		RIGHT JOIN State ON State.CountryID = Country.CountryID
+		RIGHT JOIN City ON City.StateID = State.StateID`;
+
+        const result = await pool.request().query(query);
+        res.json({data: result.recordset});
+    } catch (error) {
+        console.error('Error fetching data:', error);
+    res.status(500).json({ error: 'Error fetching data' });
+    }
+}
+
+async function getStates(req, res) {
+    try {
+        const { CountryID } = req.params;
+		
+		const query = `SELECT State.StateID,State.StateCode,State.StateName FROM State
+		RIGHT JOIN City ON City.StateID = State.StateID
+		WHERE State.CountryID = @CountryID`;
+
+		const request = await pool.request();
+		request.input('CountryID', sql.Int, CountryID);
+		const result = await request.query(query);
+		
+        res.json({data: result.recordset});
+    } catch (error) {
+        console.error('Error fetching data:', error);
+    res.status(500).json({ error: 'Error fetching data' });
+    }
+}
+
+async function getCities(req, res) {
+    try {
+        const { StateID } = req.params;
+		
+		const query = `SELECT * FROM City WHERE StateID = @StateID`;
+
+		const request = await pool.request();
+		request.input('StateID', sql.Int, StateID);
+		const result = await request.query(query);
+		
+        res.json({data: result.recordset});
+    } catch (error) {
+        console.error('Error fetching data:', error);
+    res.status(500).json({ error: 'Error fetching data' });
+    }
+}
+
+async function getDepartments(req, res) {
+    try {
+        const query = `SELECT * FROM Department`;
+
+        const result = await pool.request().query(query);
+        res.json({data: result.recordset});
+    } catch (error) {
+        console.error('Error fetching data:', error);
+    res.status(500).json({ error: 'Error fetching data' });
+    }
+}
+
+async function getDesignations(req, res) {
+    try {
+        const query = `SELECT * FROM Designation`;
+
+        const result = await pool.request().query(query);
+        res.json({data: result.recordset});
+    } catch (error) {
+        console.error('Error fetching data:', error);
+    res.status(500).json({ error: 'Error fetching data' });
     }
 }
 
